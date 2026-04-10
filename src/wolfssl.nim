@@ -109,7 +109,13 @@ when not defined(wolfsslStatic):
     ## Translate a non-success wolfSSL return code into an exception.
     ## For global/CTX-level calls where no ssl session exists.
     if ret != SSL_SUCCESS:
-      let err = newException(WolfSslError, "wolfSSL error: " & $ret)
+      var buf: array[256, char]
+      discard wolfSSL_ERR_error_string(culong(cast[cuint](ret)), cast[cstring](addr buf[0]))
+      buf[255] = '\0'
+      let msg = $cast[cstring](addr buf[0])
+      let err = newException(WolfSslError,
+        if msg.len > 0 and msg != "unknown error number": msg
+        else: "wolfSSL error: " & $ret)
       err.code = ret
       raise err
 
@@ -127,7 +133,13 @@ when not defined(wolfsslStatic):
 else:
   proc checkRet(ret: cint) {.inline, raises: [WolfSslError].} =
     if ret != SSL_SUCCESS:
-      let err = newException(WolfSslError, "wolfSSL error: " & $ret)
+      var buf: array[256, char]
+      discard wolfSSL_ERR_error_string(culong(cast[cuint](ret)), cast[cstring](addr buf[0]))
+      buf[255] = '\0'
+      let msg = $cast[cstring](addr buf[0])
+      let err = newException(WolfSslError,
+        if msg.len > 0 and msg != "unknown error number": msg
+        else: "wolfSSL error: " & $ret)
       err.code = ret
       raise err
 
@@ -189,6 +201,8 @@ proc newTlsContext*(version = tlsAuto, caFile = "", caPath = "",
   ## *caData* — PEM CA certificates as a string (avoids disk I/O on repeat use).
   ## *verify* — require valid server certificate chain (default ``true``).
   ##
+  ## CA source precedence: *caData* > *caFile* > *caPath*. Only one is used.
+  ##
   ## If no CA source is provided and *verify* is ``true``, certificate
   ## verification will fail at handshake.
   ##
@@ -214,6 +228,11 @@ proc newTlsContext*(version = tlsAuto, caFile = "", caPath = "",
   if result.ctx == nil:
     raise newException(WolfSslError, "wolfSSL_CTX_new failed")
   result.state = tsReady  # =destroy now knows there is work to do
+
+  # Floor minimum at TLS 1.2 for tlsAuto to prevent negotiating
+  # deprecated TLS 1.0/1.1 (RFC 8996).
+  if version == tlsAuto:
+    checkRet wolfSSL_CTX_SetMinVersion(result.ctx, WOLFSSL_TLSV1_2)
 
   # CA certificate loading — fallible operations. If checkRet raises,
   # =destroy cleans up `result`.

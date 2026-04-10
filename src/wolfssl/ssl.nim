@@ -32,6 +32,7 @@ const
   SSL_VERIFY_PEER* = 1
   SSL_VERIFY_FAIL_IF_NO_PEER_CERT* = 2
   WOLFSSL_SNI_HOST_NAME* = 0
+  WOLFSSL_TLSV1_2* = 3
   SOCKET_PEER_CLOSED_E* = -397  ## Underlying transport closed
 
 when defined(wolfsslStatic):
@@ -50,6 +51,7 @@ when defined(wolfsslStatic):
   proc wolfSSL_CTX_load_verify_locations*(ctx: ptr WolfsslCtx, file, path: cstring): cint {.importc, header: "<wolfssl/ssl.h>".}
   proc wolfSSL_CTX_load_verify_buffer*(ctx: ptr WolfsslCtx, buf: ptr byte, sz: clong, format: cint): cint {.importc, header: "<wolfssl/ssl.h>".}
   proc wolfSSL_CTX_set_verify*(ctx: ptr WolfsslCtx, mode: cint, cb: pointer) {.importc, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_CTX_SetMinVersion*(ctx: ptr WolfsslCtx, version: cint): cint {.importc, header: "<wolfssl/ssl.h>".}
 
   # Session
   proc wolfSSL_new*(ctx: ptr WolfsslCtx): ptr Wolfssl {.importc, header: "<wolfssl/ssl.h>".}

@@ -41,6 +41,7 @@ dynlib wolfsslPattern:
   proc wolfSSL_CTX_load_verify_locations(ctx: ptr WolfsslCtx, file, path: cstring): cint {.cdecl, header: "<wolfssl/ssl.h>".}
   proc wolfSSL_CTX_load_verify_buffer(ctx: ptr WolfsslCtx, buf: ptr byte, sz: clong, format: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
   proc wolfSSL_CTX_set_verify(ctx: ptr WolfsslCtx, mode: cint, cb: pointer) {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_CTX_SetMinVersion(ctx: ptr WolfsslCtx, version: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
 
   # Session
   proc wolfSSL_new(ctx: ptr WolfsslCtx): ptr Wolfssl {.cdecl, header: "<wolfssl/ssl.h>".}
