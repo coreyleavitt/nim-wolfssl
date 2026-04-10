@@ -69,6 +69,7 @@ Install wolfSSL headers natively: `opkg install libwolfssl-dev` (OpenWrt), `zypp
 
 - Opaque C structs use `{.importc, header: "<wolfssl/ssl.h>", incompleteStruct.}` — always passed by `ptr`, never copied. Type definitions are always present regardless of linking mode.
 - All FFI functions come from a single header: `<wolfssl/ssl.h>`.
+- **`options.h` must be included before `ssl.h`** — wolfSSL requires `<wolfssl/options.h>` first to enable compile-time feature flags (TLS 1.3, SNI, etc.). Without it, functions like `wolfTLSv1_3_client_method` are not declared. Both `ssl.nim` and `loader.nim` use `{.emit: """/*INCLUDESECTION*/\n#include <wolfssl/options.h>\n""".}` to ensure correct include order. Any new file that imports wolfSSL headers needs this emit.
 - No callback types needed — wolfSSL uses `set_fd()` for I/O, not function pointer callbacks.
 - Static mode: `{.passL: "-Wl,-Bstatic -lwolfssl -Wl,-Bdynamic".}` in `ssl.nim`.
 - Dynamic mode: no `passL` — library loaded at runtime by `loader.nim`. Softlink dynlib procs use `{.cdecl.}`.
@@ -77,8 +78,8 @@ Install wolfSSL headers natively: `opkg install libwolfssl-dev` (OpenWrt), `zypp
 
 `TlsContext` is a move-only value type (same Nim 2.x idiom as nim-mbedtls):
 - **`=copy` disabled** — prevents aliased pointers / double-free. Use `move` to transfer.
-- **`=destroy`** nil-checks each `ptr` field, closes socket fd, calls free in reverse allocation order.
-- **`close` = `=destroy` + `wasMoved`** — the stdlib pattern.
+- **`=destroy`** nil-checks each `ptr` field, closes socket fd, calls free in reverse allocation order. Does NOT send close_notify — no network I/O in destructors.
+- **`close`** sends unidirectional close_notify (best-effort, max 3 WANT retries), then calls `=destroy` + `wasMoved`. Use `close()` for clean TLS shutdown; objects falling out of scope get fast resource-only cleanup.
 - **State machine** (`tsClosed` -> `tsReady` -> `tsConnected`) enforced by raising `WolfSslError`.
 - **Exception-safe init** — if `checkRet` raises during setup, `=destroy` on `result` cleans up partial allocations.
 - **3 heap objects** (`WolfsslCtx`, `Wolfssl`, socket fd) vs mbedTLS's 6.
