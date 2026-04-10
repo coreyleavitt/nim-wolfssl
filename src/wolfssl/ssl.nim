@@ -78,6 +78,7 @@ when defined(wolfsslStatic):
 
   # ALPN
   proc wolfSSL_UseALPN*(ssl: ptr Wolfssl, protocols: cstring, sz: cuint, options: uint8): cint {.importc, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_ALPN_GetProtocol*(ssl: ptr Wolfssl, protocol: ptr cstring, size: ptr cushort): cint {.importc, header: "<wolfssl/ssl.h>".}
 
   # Peer certificate
   proc wolfSSL_get_peer_certificate*(ssl: ptr Wolfssl): ptr WolfsslX509 {.importc, header: "<wolfssl/ssl.h>".}

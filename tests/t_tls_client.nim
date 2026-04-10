@@ -59,3 +59,43 @@ suite "tls client integration":
     expect WolfSslError:
       ctx.connect("www.google.com", 443)
     ctx.close()
+
+  test "readInto streaming read":
+    var ctx = newTlsContext(caFile = ca)
+    ctx.connect("www.google.com", 443)
+    ctx.write("GET / HTTP/1.0\r\nHost: www.google.com\r\n\r\n")
+    var buf: array[4096, byte]
+    let n = ctx.readInto(buf)
+    check n > 0
+    # First bytes should be HTTP response
+    let header = newString(min(n, 7))
+    copyMem(addr header[0], addr buf[0], header.len)
+    check header.startsWith("HTTP/1.")
+    ctx.close()
+
+  test "write openArray[byte] integration":
+    var ctx = newTlsContext(caFile = ca)
+    ctx.connect("www.google.com", 443)
+    let req = "GET / HTTP/1.0\r\nHost: www.google.com\r\n\r\n"
+    var reqBytes = newSeq[byte](req.len)
+    copyMem(addr reqBytes[0], addr req[0], req.len)
+    ctx.write(reqBytes)
+    let response = ctx.read()
+    check response.startsWith("HTTP/1.")
+    ctx.close()
+
+  test "peerCertDer returns non-empty after handshake":
+    var ctx = newTlsContext(caFile = ca)
+    ctx.connect("www.google.com", 443)
+    let der = ctx.peerCertDer()
+    check der.len > 0
+    # DER certificates start with ASN.1 SEQUENCE tag (0x30)
+    check der[0] == 0x30'u8
+    ctx.close()
+
+  test "ALPN negotiation with http/1.1":
+    var ctx = newTlsContext(caFile = ca)
+    ctx.connect("www.google.com", 443, alpn = ["http/1.1"])
+    let proto = ctx.negotiatedAlpn()
+    check proto == "http/1.1"
+    ctx.close()

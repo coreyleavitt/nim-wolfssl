@@ -173,6 +173,44 @@ suite "TlsContext state enforcement":
     # (Full test requires network — covered in Tier 2.)
     ctx.close()
 
+  test "readInto before connect raises WolfSslError":
+    var ctx = newTlsContext(verify = false)
+    var buf: array[16, byte]
+    expect WolfSslError:
+      discard ctx.readInto(buf)
+    ctx.close()
+
+  test "readInto on closed context raises WolfSslError":
+    var ctx = newTlsContext(verify = false)
+    ctx.close()
+    var buf: array[16, byte]
+    expect WolfSslError:
+      discard ctx.readInto(buf)
+
+  test "write openArray[byte] before connect raises WolfSslError":
+    var ctx = newTlsContext(verify = false)
+    expect WolfSslError:
+      ctx.write([byte 1, 2, 3])
+    ctx.close()
+
+  test "peerCertDer on non-connected context returns empty":
+    var ctx = newTlsContext(verify = false)
+    check ctx.peerCertDer().len == 0
+    ctx.close()
+
+  test "negotiatedAlpn on non-connected context returns empty":
+    var ctx = newTlsContext(verify = false)
+    check ctx.negotiatedAlpn() == ""
+    ctx.close()
+
+  test "mTLS cert without key raises WolfSslError":
+    expect WolfSslError:
+      discard newTlsContext(certFile = "/tmp/cert.pem", verify = false)
+
+  test "mTLS key without cert raises WolfSslError":
+    expect WolfSslError:
+      discard newTlsContext(keyFile = "/tmp/key.pem", verify = false)
+
   test "destroy leaves safe state":
     var ctx = newTlsContext(verify = false)
     `=destroy`(ctx)

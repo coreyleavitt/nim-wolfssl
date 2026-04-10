@@ -64,6 +64,7 @@ dynlib wolfsslPattern:
 
   # ALPN
   proc wolfSSL_UseALPN(ssl: ptr Wolfssl, protocols: cstring, sz: cuint, options: uint8): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_ALPN_GetProtocol(ssl: ptr Wolfssl, protocol: ptr cstring, size: ptr cushort): cint {.cdecl, header: "<wolfssl/ssl.h>".}
 
   # Peer certificate
   proc wolfSSL_get_peer_certificate(ssl: ptr Wolfssl): ptr WolfsslX509 {.cdecl, header: "<wolfssl/ssl.h>".}

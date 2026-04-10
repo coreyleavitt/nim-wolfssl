@@ -37,20 +37,28 @@ nimble test              # tier 1 (binding validation)
 nimble test_integration  # tier 2 (real TLS connections)
 ```
 
-Docker image (`opensuse/tumbleweed` with `nim`, `wolfssl-devel`, `gcc`, `ca-certificates-mozilla`):
+Docker dev image (Ubuntu with Nim via choosenim + wolfSSL from source):
 ```bash
 docker build -t nim-wolfssl-dev -f - . <<'EOF'
-FROM opensuse/tumbleweed
-RUN zypper --non-interactive install nim wolfssl-devel gcc ca-certificates-mozilla
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y gcc ca-certificates curl git autoconf automake libtool make xz-utils
+RUN curl https://nim-lang.org/choosenim/init.sh -sSf | sh -s -- -y
+ENV PATH="/root/.nimble/bin:${PATH}"
+RUN git clone --depth 1 --branch v5.7.6-stable https://github.com/wolfSSL/wolfssl.git /tmp/wolfssl && \
+    cd /tmp/wolfssl && ./autogen.sh && \
+    ./configure --enable-sni --enable-opensslextra --enable-alpn --enable-static --prefix=/usr && \
+    make -j$(nproc) && make install && ldconfig && rm -rf /tmp/wolfssl
 WORKDIR /work
 EOF
 ```
 
-Install wolfSSL headers natively: `opkg install libwolfssl-dev` (OpenWrt), `zypper install wolfssl-devel` (Tumbleweed).
+wolfSSL must be built with `--enable-sni --enable-opensslextra --enable-alpn` for the full feature set (SNI, X509 peer cert inspection, ALPN negotiation).
+
+Install wolfSSL headers natively: `opkg install libwolfssl-dev` (OpenWrt).
 
 ## Architecture
 
-- `src/wolfssl.nim` — High-level `TlsContext` API: `newTlsContext`, `connect`, `read`, `write`, `close`. Owns `WolfsslCtx`, `Wolfssl`, and a POSIX socket fd. Uses `=destroy` for cleanup. In dynamic mode, exposes `loadWolfssl()` / `wolfsslAvailable()`.
+- `src/wolfssl.nim` — High-level `TlsContext` API: `newTlsContext`, `connect`, `read`, `readInto`, `write` (string and openArray[byte]), `close`, `peerCertDer`, `negotiatedAlpn`. Supports mTLS via `certFile`/`keyFile`/`certData`/`keyData` params. Owns `WolfsslCtx`, `Wolfssl`, and a socket fd (via `std/nativesockets`). Uses `=destroy` for cleanup. In dynamic mode, exposes `loadWolfssl()` / `wolfsslAvailable()`.
 - `src/wolfssl/ssl.nim` — Opaque type definitions (`WolfsslCtx`, `Wolfssl`, `WolfsslMethod`) and constants. In static mode (`-d:wolfsslStatic`), also contains `importc` proc bindings.
 - `src/wolfssl/loader.nim` — Single softlink `dynlib` block for runtime loading (dynamic mode only). One block for `libwolfssl.so` — simpler than mbedTLS's three-loader pattern.
 - `tests/t_bindings.nim` — Tier 1: init/free round-trips, library loading, state enforcement (offline).

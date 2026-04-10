@@ -382,6 +382,8 @@ proc writeBuffer(ctx: var TlsContext, data: pointer, dataLen: int) =
   if ctx.state != tsConnected:
     raiseStateError("write requires an active connection (state is " & $ctx.state & ")")
   if dataLen == 0: return
+  if dataLen > high(cint).int:
+    raise newException(WolfSslError, "write data exceeds maximum size of " & $high(cint) & " bytes")
   const maxWantRetries = 100
   var offset = 0
   var wantRetries = 0
@@ -476,7 +478,14 @@ proc peerCertDer*(ctx: TlsContext): seq[byte] =
   ## Returns an empty seq if no peer certificate is available (e.g., not
   ## connected, or peer sent no certificate).
   ##
+  ## **Must be called before ``close()``** — after close, the SSL session
+  ## is freed and no certificate is available.
+  ##
   ## Useful for certificate pinning and expiry monitoring.
+  ##
+  ## Note: assumes wolfSSL was built with ``KEEP_PEER_CERT`` (default).
+  ## ``wolfSSL_get_peer_certificate`` returns a new reference that is
+  ## freed via ``wolfSSL_X509_free`` after copying the DER bytes.
   if ctx.state != tsConnected or ctx.ssl == nil:
     return @[]
   let x509 = wolfSSL_get_peer_certificate(ctx.ssl)
@@ -489,5 +498,22 @@ proc peerCertDer*(ctx: TlsContext): seq[byte] =
     return @[]
   result = newSeq[byte](derLen)
   copyMem(addr result[0], derPtr, derLen)
+
+proc negotiatedAlpn*(ctx: TlsContext): string =
+  ## Return the ALPN protocol negotiated during the handshake.
+  ##
+  ## Returns an empty string if no ALPN was negotiated (e.g., ALPN was
+  ## not requested, the server doesn't support it, or not connected).
+  ##
+  ## Must be called after ``connect()`` and before ``close()``.
+  if ctx.state != tsConnected or ctx.ssl == nil:
+    return ""
+  var proto: cstring
+  var protoLen: cushort
+  let ret = wolfSSL_ALPN_GetProtocol(ctx.ssl, addr proto, addr protoLen)
+  if ret != SSL_SUCCESS or proto == nil or protoLen == 0:
+    return ""
+  result = newString(protoLen)
+  copyMem(addr result[0], proto, protoLen)
 
 {.pop.}  # raises
