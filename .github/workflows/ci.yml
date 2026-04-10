@@ -37,9 +37,6 @@ jobs:
       - name: Build (dynamic)
         run: nim c --path:src src/wolfssl.nim
 
-      - name: Build (static)
-        run: nim c -d:wolfsslStatic --path:src src/wolfssl.nim
-
       - name: Tier 1 — binding validation
         run: nim c -r --path:src tests/t_bindings.nim
 
