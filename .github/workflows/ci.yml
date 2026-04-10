@@ -19,7 +19,7 @@ jobs:
 
       - name: Build wolfSSL from source
         run: |
-          git clone --depth 1 https://github.com/wolfSSL/wolfssl.git /tmp/wolfssl
+          git clone --depth 1 --branch v5.7.6-stable https://github.com/wolfSSL/wolfssl.git /tmp/wolfssl
           cd /tmp/wolfssl
           ./autogen.sh
           ./configure --enable-sni --prefix=/usr
