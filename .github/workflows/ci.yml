@@ -15,7 +15,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
-        run: zypper --non-interactive install nim gcc ca-certificates-mozilla git autoconf automake libtool make
+        run: zypper --non-interactive install gcc ca-certificates-mozilla git autoconf automake libtool make curl tar xz
+
+      - name: Install Nim via choosenim
+        run: |
+          curl https://nim-lang.org/choosenim/init.sh -sSf | sh -s -- -y
+          echo "$HOME/.nimble/bin" >> $GITHUB_PATH
+        env:
+          CHOOSENIM_CHOOSE_VERSION: stable
 
       - name: Build wolfSSL from source
         run: |
