@@ -158,6 +158,14 @@ proc raiseStateError(msg: string) {.noinline, noreturn, raises: [WolfSslError].}
   ## this is never compiled out — misuse is always caught, even with -d:danger.
   raise newException(WolfSslError, msg)
 
+proc isEofError(err: cint): bool {.inline.} =
+  ## True if the wolfSSL error code represents an EOF condition.
+  ## Used by both read() and readInto() to ensure consistent behavior.
+  ## SSL_ERROR_SYSCALL is included because it covers the common case of
+  ## the peer closing the TCP connection (recv returns 0).
+  err == SSL_ERROR_ZERO_RETURN or err == SSL_ERROR_NONE or
+  err == SSL_ERROR_SYSCALL or err == SOCKET_PEER_CLOSED_E
+
 # -- Public API --------------------------------------------------------------
 
 when not defined(wolfsslStatic):
@@ -418,10 +426,8 @@ proc read*(ctx: var TlsContext, bufSize = 4096, maxSize = 8_388_608): string =
       let err = wolfSSL_get_error(ctx.ssl, ret)
       if err == SSL_ERROR_WANT_READ or err == SSL_ERROR_WANT_WRITE:
         continue
-      if err == SSL_ERROR_ZERO_RETURN or err == SSL_ERROR_NONE or
-         err == SSL_ERROR_SYSCALL or err == SOCKET_PEER_CLOSED_E or
-         err == FATAL_ERROR:
-        break  # EOF — clean close, transport closed, syscall EOF, or alert
+      if isEofError(err):
+        break  # EOF — clean close, transport closed, or syscall EOF
       checkRet(ctx.ssl, ret)
     else:
       pos += ret
@@ -446,8 +452,7 @@ proc readInto*(ctx: var TlsContext, buf: var openArray[byte]): int =
     let err = wolfSSL_get_error(ctx.ssl, ret)
     if err == SSL_ERROR_WANT_READ or err == SSL_ERROR_WANT_WRITE:
       continue
-    if err == SSL_ERROR_ZERO_RETURN or err == SSL_ERROR_NONE or
-       err == SOCKET_PEER_CLOSED_E:
+    if isEofError(err):
       return 0  # EOF
     checkRet(ctx.ssl, ret)
 
