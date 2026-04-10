@@ -26,7 +26,7 @@ jobs:
           git clone --depth 1 --branch v5.7.6-stable https://github.com/wolfSSL/wolfssl.git /tmp/wolfssl
           cd /tmp/wolfssl
           ./autogen.sh
-          ./configure --enable-sni --enable-static --prefix=/usr
+          ./configure --enable-sni --enable-opensslextra --enable-alpn --enable-static --prefix=/usr
           make -j$(nproc)
           sudo make install
           sudo ldconfig
