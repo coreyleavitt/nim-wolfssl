@@ -26,7 +26,7 @@ jobs:
           git clone --depth 1 --branch v5.7.6-stable https://github.com/wolfSSL/wolfssl.git /tmp/wolfssl
           cd /tmp/wolfssl
           ./autogen.sh
-          ./configure --enable-sni --prefix=/usr
+          ./configure --enable-sni --enable-static --prefix=/usr
           make -j$(nproc)
           sudo make install
           sudo ldconfig
@@ -36,6 +36,9 @@ jobs:
 
       - name: Build (dynamic)
         run: nim c --path:src src/wolfssl.nim
+
+      - name: Build (static)
+        run: nim c -d:wolfsslStatic --path:src src/wolfssl.nim
 
       - name: Tier 1 — binding validation
         run: nim c -r --path:src tests/t_bindings.nim
