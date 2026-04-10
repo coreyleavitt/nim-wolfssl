@@ -1,5 +1,13 @@
 ## Low-level bindings for wolfSSL functions.
 ## Single header: <wolfssl/ssl.h> for all types, constants, and procs.
+##
+## wolfSSL requires <wolfssl/options.h> before <wolfssl/ssl.h> to enable
+## compile-time feature flags (TLS 1.3, SNI, etc.). The emit below ensures
+## correct include order in all generated C files.
+
+{.emit: """/*INCLUDESECTION*/
+#include <wolfssl/options.h>
+""".}
 
 when defined(wolfsslStatic):
   {.passL: "-Wl,-Bstatic -lwolfssl -Wl,-Bdynamic".}
@@ -9,6 +17,14 @@ type
   WolfsslCtx* {.importc: "WOLFSSL_CTX", header: "<wolfssl/ssl.h>", incompleteStruct.} = object
   Wolfssl* {.importc: "WOLFSSL", header: "<wolfssl/ssl.h>", incompleteStruct.} = object
   WolfsslMethod* {.importc: "WOLFSSL_METHOD", header: "<wolfssl/ssl.h>", incompleteStruct.} = object
+
+# Pointer type aliases — named types work around a Nim compiler ICE
+# (nkPtrTy in emit context) when ptr-to-incompleteStruct is used as a
+# return type inside softlink dynlib blocks.
+type
+  WolfsslCtxPtr* = ptr WolfsslCtx
+  WolfsslPtr* = ptr Wolfssl
+  WolfsslMethodPtr* = ptr WolfsslMethod
 
 const
   SSL_SUCCESS* = 1

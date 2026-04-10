@@ -138,9 +138,9 @@ proc raiseStateError(msg: string) {.noinline, noreturn, raises: [WolfSslError].}
 # -- Public API --------------------------------------------------------------
 
 when not defined(wolfsslStatic):
-  {.push raises: [WolfSslError, SoftlinkError].}
+  {.push raises: [WolfSslError, SoftlinkError, OSError].}
 else:
-  {.push raises: [WolfSslError].}
+  {.push raises: [WolfSslError, OSError].}
 
 proc state*(ctx: TlsContext): TlsState {.inline, raises: [].} = ctx.state
 
@@ -234,11 +234,11 @@ proc connect*(ctx: var TlsContext, hostname: string, port: int) =
     raiseStateError("connect requires a fresh TlsContext (state is " & $ctx.state & ")")
 
   # DNS resolution + TCP connect with multi-address fallback.
-  var aiList = getAddrInfo(hostname, Port(port), AfUnspec, SockStream, ProtoTcp)
+  var aiList = getAddrInfo(hostname, Port(port), AfUnspec, SockStream, IPPROTO_TCP)
   defer: freeAddrInfo(aiList)
   var ai = aiList
   while ai != nil:
-    let sock = createNativeSocket(ai.ai_family.Domain, SockStream, ProtoTcp)
+    let sock = createNativeSocket(cast[Domain](ai.ai_family), SockStream, IPPROTO_TCP)
     if sock != osInvalidSocket:
       if nativesockets.connect(sock, ai.ai_addr, ai.ai_addrlen.SockLen) == 0.cint:
         ctx.sockFd = sock

@@ -12,6 +12,11 @@ import wolfssl/ssl
 
 export softlink
 
+# wolfSSL requires options.h before ssl.h for feature flags (TLS 1.3, SNI, etc.)
+{.emit: """/*INCLUDESECTION*/
+#include <wolfssl/options.h>
+""".}
+
 # Cross-platform library patterns.
 when defined(macosx):
   const wolfsslPattern = "libwolfssl(.42|.41|.40|.39|.38|.37|.36|.35|).dylib"
@@ -26,31 +31,31 @@ dynlib wolfsslPattern:
   proc wolfSSL_Cleanup(): cint {.cdecl, header: "<wolfssl/ssl.h>".}
 
   # Method selection
-  proc wolfTLSv1_2_client_method(): ptr WolfsslMethod {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfTLSv1_3_client_method(): ptr WolfsslMethod {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSLv23_client_method(): ptr WolfsslMethod {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfTLSv1_2_client_method(): WolfsslMethodPtr {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfTLSv1_3_client_method(): WolfsslMethodPtr {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSLv23_client_method(): WolfsslMethodPtr {.cdecl, header: "<wolfssl/ssl.h>".}
 
   # Context
-  proc wolfSSL_CTX_new(meth: ptr WolfsslMethod): ptr WolfsslCtx {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSL_CTX_free(ctx: ptr WolfsslCtx) {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSL_CTX_load_verify_locations(ctx: ptr WolfsslCtx, file, path: cstring): cint {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSL_CTX_load_verify_buffer(ctx: ptr WolfsslCtx, buf: ptr byte, sz: clong, format: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSL_CTX_set_verify(ctx: ptr WolfsslCtx, mode: cint, cb: pointer) {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_CTX_new(meth: WolfsslMethodPtr): WolfsslCtxPtr {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_CTX_free(ctx: WolfsslCtxPtr) {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_CTX_load_verify_locations(ctx: WolfsslCtxPtr, file, path: cstring): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_CTX_load_verify_buffer(ctx: WolfsslCtxPtr, buf: ptr byte, sz: clong, format: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_CTX_set_verify(ctx: WolfsslCtxPtr, mode: cint, cb: pointer) {.cdecl, header: "<wolfssl/ssl.h>".}
 
   # Session
-  proc wolfSSL_new(ctx: ptr WolfsslCtx): ptr Wolfssl {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSL_free(ssl: ptr Wolfssl) {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSL_set_fd(ssl: ptr Wolfssl, fd: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSL_connect(ssl: ptr Wolfssl): cint {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSL_shutdown(ssl: ptr Wolfssl): cint {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSL_write(ssl: ptr Wolfssl, data: pointer, sz: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
-  proc wolfSSL_read(ssl: ptr Wolfssl, data: pointer, sz: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_new(ctx: WolfsslCtxPtr): WolfsslPtr {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_free(ssl: WolfsslPtr) {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_set_fd(ssl: WolfsslPtr, fd: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_connect(ssl: WolfsslPtr): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_shutdown(ssl: WolfsslPtr): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_write(ssl: WolfsslPtr, data: pointer, sz: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_read(ssl: WolfsslPtr, data: pointer, sz: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
 
   # SNI
-  proc wolfSSL_UseSNI(ssl: ptr Wolfssl, typ: cint, data: pointer, size: cushort): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_UseSNI(ssl: WolfsslPtr, typ: cint, data: pointer, size: cushort): cint {.cdecl, header: "<wolfssl/ssl.h>".}
 
   # Error
-  proc wolfSSL_get_error(ssl: ptr Wolfssl, ret: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_get_error(ssl: WolfsslPtr, ret: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
   proc wolfSSL_ERR_error_string(err: culong, buf: cstring): cstring {.cdecl, header: "<wolfssl/ssl.h>".}
 
 proc wolfsslAvailable*(): bool = wolfsslLoaded()

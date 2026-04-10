@@ -7,7 +7,7 @@ srcDir        = "src"
 
 # Dependencies
 requires "nim >= 2.0.0"
-requires "https://github.com/coreyleavitt/softlink >= 0.3.1"
+requires "https://github.com/coreyleavitt/softlink#v0.3.1"
 
 task test, "Run binding validation tests (Tier 1, no network)":
   exec "nim c -r --path:src tests/t_bindings.nim"
