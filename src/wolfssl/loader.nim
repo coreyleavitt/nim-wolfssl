@@ -19,11 +19,11 @@ export softlink
 
 # Cross-platform library patterns.
 when defined(macosx):
-  const wolfsslPattern = "libwolfssl(.42|.41|.40|.39|.38|.37|.36|.35|).dylib"
+  const wolfsslPattern = "libwolfssl(.43|.42|.41|.40|.39|.38|.37|.36|.35|).dylib"
 elif defined(windows):
   const wolfsslPattern = "wolfssl.dll"
 else:
-  const wolfsslPattern = "libwolfssl.so(.42|.41|.40|.39|.38|.37|.36|.35|)"
+  const wolfsslPattern = "libwolfssl.so(.43|.42|.41|.40|.39|.38|.37|.36|.35|)"
 
 dynlib wolfsslPattern:
   # Init/cleanup
@@ -43,6 +43,12 @@ dynlib wolfsslPattern:
   proc wolfSSL_CTX_set_verify(ctx: ptr WolfsslCtx, mode: cint, cb: pointer) {.cdecl, header: "<wolfssl/ssl.h>".}
   proc wolfSSL_CTX_SetMinVersion(ctx: ptr WolfsslCtx, version: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
 
+  # Client certificate / mTLS
+  proc wolfSSL_CTX_use_certificate_file(ctx: ptr WolfsslCtx, file: cstring, format: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_CTX_use_PrivateKey_file(ctx: ptr WolfsslCtx, file: cstring, format: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_CTX_use_certificate_buffer(ctx: ptr WolfsslCtx, buf: ptr byte, sz: clong, format: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_CTX_use_PrivateKey_buffer(ctx: ptr WolfsslCtx, buf: ptr byte, sz: clong, format: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+
   # Session
   proc wolfSSL_new(ctx: ptr WolfsslCtx): ptr Wolfssl {.cdecl, header: "<wolfssl/ssl.h>".}
   proc wolfSSL_free(ssl: ptr Wolfssl) {.cdecl, header: "<wolfssl/ssl.h>".}
@@ -55,6 +61,14 @@ dynlib wolfsslPattern:
   # SNI and hostname verification
   proc wolfSSL_UseSNI(ssl: ptr Wolfssl, typ: cint, data: pointer, size: cushort): cint {.cdecl, header: "<wolfssl/ssl.h>".}
   proc wolfSSL_check_domain_name(ssl: ptr Wolfssl, dn: cstring): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+
+  # ALPN
+  proc wolfSSL_UseALPN(ssl: ptr Wolfssl, protocols: cstring, sz: cuint, options: uint8): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+
+  # Peer certificate
+  proc wolfSSL_get_peer_certificate(ssl: ptr Wolfssl): ptr WolfsslX509 {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_X509_get_der(x509: ptr WolfsslX509, outSz: ptr cint): ptr byte {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_X509_free(x509: ptr WolfsslX509) {.cdecl, header: "<wolfssl/ssl.h>".}
 
   # Error
   proc wolfSSL_get_error(ssl: ptr Wolfssl, ret: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}

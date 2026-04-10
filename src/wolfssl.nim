@@ -23,7 +23,7 @@
 ## be used from a single thread. ``wolfSSL_Init()`` is called once via
 ## double-checked locking and is safe under concurrent ``newTlsContext`` calls.
 
-import std/[nativesockets, locks]
+import std/[nativesockets, locks, strutils]
 import wolfssl/ssl
 export ssl
 
@@ -192,16 +192,26 @@ proc close*(ctx: var TlsContext) =
   wasMoved(ctx)
 
 proc newTlsContext*(version = tlsAuto, caFile = "", caPath = "",
-                    caData = "", verify = true): TlsContext =
+                    caData: openArray[byte] = [],
+                    certFile = "", keyFile = "",
+                    certData: openArray[byte] = [],
+                    keyData: openArray[byte] = [],
+                    verify = true): TlsContext =
   ## Create a TLS client context.
   ##
   ## *version* — TLS version selection (default negotiates highest).
   ## *caFile* — path to a PEM CA certificate file.
   ## *caPath* — path to a directory of PEM CA certificates.
-  ## *caData* — PEM CA certificates as a string (avoids disk I/O on repeat use).
+  ## *caData* — PEM/DER CA certificates as bytes (avoids disk I/O on repeat use).
+  ## *certFile* — path to PEM client certificate for mutual TLS.
+  ## *keyFile* — path to PEM private key for mutual TLS.
+  ## *certData* — PEM/DER client certificate as bytes for mutual TLS.
+  ## *keyData* — PEM/DER private key as bytes for mutual TLS.
   ## *verify* — require valid server certificate chain (default ``true``).
   ##
   ## CA source precedence: *caData* > *caFile* > *caPath*. Only one is used.
+  ## Client cert precedence: *certData* > *certFile*. Only one is used.
+  ## Client key precedence: *keyData* > *keyFile*. Only one is used.
   ##
   ## If no CA source is provided and *verify* is ``true``, certificate
   ## verification will fail at handshake.
@@ -238,7 +248,7 @@ proc newTlsContext*(version = tlsAuto, caFile = "", caPath = "",
   # =destroy cleans up `result`.
   if caData.len > 0:
     checkRet wolfSSL_CTX_load_verify_buffer(result.ctx,
-      cast[ptr byte](addr caData[0]), clong(caData.len), SSL_FILETYPE_PEM)
+      cast[ptr byte](unsafeAddr caData[0]), clong(caData.len), SSL_FILETYPE_PEM)
   elif caFile.len > 0:
     checkRet wolfSSL_CTX_load_verify_locations(result.ctx,
       caFile.cstring, nil)
@@ -246,18 +256,37 @@ proc newTlsContext*(version = tlsAuto, caFile = "", caPath = "",
     checkRet wolfSSL_CTX_load_verify_locations(result.ctx,
       nil, caPath.cstring)
 
+  # Client certificate for mutual TLS.
+  if certData.len > 0:
+    checkRet wolfSSL_CTX_use_certificate_buffer(result.ctx,
+      cast[ptr byte](unsafeAddr certData[0]), clong(certData.len), SSL_FILETYPE_PEM)
+  elif certFile.len > 0:
+    checkRet wolfSSL_CTX_use_certificate_file(result.ctx,
+      certFile.cstring, SSL_FILETYPE_PEM)
+
+  # Client private key for mutual TLS.
+  if keyData.len > 0:
+    checkRet wolfSSL_CTX_use_PrivateKey_buffer(result.ctx,
+      cast[ptr byte](unsafeAddr keyData[0]), clong(keyData.len), SSL_FILETYPE_PEM)
+  elif keyFile.len > 0:
+    checkRet wolfSSL_CTX_use_PrivateKey_file(result.ctx,
+      keyFile.cstring, SSL_FILETYPE_PEM)
+
   if verify:
     wolfSSL_CTX_set_verify(result.ctx, SSL_VERIFY_PEER, nil)
   else:
     wolfSSL_CTX_set_verify(result.ctx, SSL_VERIFY_NONE, nil)
 
-proc connect*(ctx: var TlsContext, hostname: string, port: int) =
+proc connect*(ctx: var TlsContext, hostname: string, port: int,
+              alpn: openArray[string] = []) =
   ## TCP connect + TLS handshake with SNI and hostname verification.
   ##
   ## Resolves *hostname* via DNS, iterates all returned addresses
   ## (IPv4 and IPv6) until one connects. Then creates a wolfSSL session,
-  ## sets SNI and hostname verification, and performs the TLS handshake.
+  ## sets SNI, hostname verification, optional ALPN, and performs the
+  ## TLS handshake.
   ##
+  ## *alpn* — ALPN protocol list (e.g., ``["h2", "http/1.1"]``). Empty = no ALPN.
   ## Raises ``WolfSslError`` on DNS failure, TCP failure, or TLS failure.
   ## Can only be called once on a freshly-created context.
   ## After a failed connect the context should be closed.
@@ -305,6 +334,13 @@ proc connect*(ctx: var TlsContext, hostname: string, port: int) =
   # Without this, any CA-signed cert would pass verification (MITM).
   checkRet wolfSSL_check_domain_name(ctx.ssl, hostname.cstring)
 
+  # ALPN — Application-Layer Protocol Negotiation (e.g., for HTTP/2).
+  if alpn.len > 0:
+    # wolfSSL expects a comma-separated protocol list.
+    let alpnStr = alpn.join(",")
+    checkRet wolfSSL_UseALPN(ctx.ssl, alpnStr.cstring,
+      cuint(alpnStr.len), uint8(WOLFSSL_ALPN_FAILED_ON_MISMATCH))
+
   # TLS handshake with bounded WANT_READ/WANT_WRITE retry.
   const maxHandshakeRetries = 100
   var ret = wolfSSL_connect(ctx.ssl)
@@ -319,17 +355,17 @@ proc connect*(ctx: var TlsContext, hostname: string, port: int) =
     ret = wolfSSL_connect(ctx.ssl)
   ctx.state = tsConnected
 
-proc write*(ctx: var TlsContext, data: string) =
-  ## Send *data* over the TLS channel. Handles partial writes internally.
+proc writeBuffer(ctx: var TlsContext, data: pointer, dataLen: int) =
+  ## Internal: send raw bytes over TLS. Handles partial writes.
   if ctx.state != tsConnected:
     raiseStateError("write requires an active connection (state is " & $ctx.state & ")")
-  if data.len == 0: return
+  if dataLen == 0: return
   const maxWantRetries = 100
   var offset = 0
   var wantRetries = 0
-  while offset < data.len:
+  while offset < dataLen:
     let ret = wolfSSL_write(ctx.ssl,
-      cast[pointer](addr data[offset]), cint(data.len - offset))
+      cast[pointer](cast[uint](data) + uint(offset)), cint(dataLen - offset))
     if ret <= 0:
       let err = wolfSSL_get_error(ctx.ssl, ret)
       if err == SSL_ERROR_WANT_WRITE or err == SSL_ERROR_WANT_READ:
@@ -341,6 +377,16 @@ proc write*(ctx: var TlsContext, data: string) =
     else:
       offset += ret
       wantRetries = 0  # reset on progress
+
+proc write*(ctx: var TlsContext, data: string) =
+  ## Send string *data* over the TLS channel. Handles partial writes internally.
+  if data.len > 0:
+    ctx.writeBuffer(addr data[0], data.len)
+
+proc write*(ctx: var TlsContext, data: openArray[byte]) =
+  ## Send binary *data* over the TLS channel. Handles partial writes internally.
+  if data.len > 0:
+    ctx.writeBuffer(unsafeAddr data[0], data.len)
 
 proc read*(ctx: var TlsContext, bufSize = 4096, maxSize = 8_388_608): string =
   ## Read from the TLS channel until the peer closes the connection.
@@ -373,11 +419,56 @@ proc read*(ctx: var TlsContext, bufSize = 4096, maxSize = 8_388_608): string =
       if err == SSL_ERROR_WANT_READ or err == SSL_ERROR_WANT_WRITE:
         continue
       if err == SSL_ERROR_ZERO_RETURN or err == SSL_ERROR_NONE or
-         err == SOCKET_PEER_CLOSED_E:
-        break  # EOF — clean close, ambiguous disconnect, or transport closed
+         err == SSL_ERROR_SYSCALL or err == SOCKET_PEER_CLOSED_E or
+         err == FATAL_ERROR:
+        break  # EOF — clean close, transport closed, syscall EOF, or alert
       checkRet(ctx.ssl, ret)
     else:
       pos += ret
   result.setLen(pos)
+
+proc readInto*(ctx: var TlsContext, buf: var openArray[byte]): int =
+  ## Read up to ``buf.len`` bytes from the TLS channel into *buf*.
+  ##
+  ## Returns the number of bytes read. Returns 0 on EOF (clean close or
+  ## transport closed). Raises ``WolfSslError`` on TLS errors.
+  ##
+  ## This is the low-level streaming read primitive. Use ``read()`` for
+  ## convenience when you want to buffer the entire response.
+  if ctx.state != tsConnected:
+    raiseStateError("readInto requires an active connection (state is " & $ctx.state & ")")
+  if buf.len == 0: return 0
+  while true:
+    let ret = wolfSSL_read(ctx.ssl,
+      addr buf[0], cint(buf.len))
+    if ret > 0:
+      return ret
+    let err = wolfSSL_get_error(ctx.ssl, ret)
+    if err == SSL_ERROR_WANT_READ or err == SSL_ERROR_WANT_WRITE:
+      continue
+    if err == SSL_ERROR_ZERO_RETURN or err == SSL_ERROR_NONE or
+       err == SOCKET_PEER_CLOSED_E:
+      return 0  # EOF
+    checkRet(ctx.ssl, ret)
+
+proc peerCertDer*(ctx: TlsContext): seq[byte] =
+  ## Return the peer's certificate in DER format after a successful handshake.
+  ##
+  ## Returns an empty seq if no peer certificate is available (e.g., not
+  ## connected, or peer sent no certificate).
+  ##
+  ## Useful for certificate pinning and expiry monitoring.
+  if ctx.state != tsConnected or ctx.ssl == nil:
+    return @[]
+  let x509 = wolfSSL_get_peer_certificate(ctx.ssl)
+  if x509 == nil:
+    return @[]
+  defer: wolfSSL_X509_free(x509)
+  var derLen: cint = 0
+  let derPtr = wolfSSL_X509_get_der(x509, addr derLen)
+  if derPtr == nil or derLen <= 0:
+    return @[]
+  result = newSeq[byte](derLen)
+  copyMem(addr result[0], derPtr, derLen)
 
 {.pop.}  # raises
