@@ -20,10 +20,10 @@
 ## Low-level access: ``import wolfssl/ssl`` for types/constants.
 ##
 ## **Thread safety:** ``TlsContext`` is not thread-safe. Each context must
-## be used from a single thread. ``wolfSSL_Init()`` is called lazily on
-## first use and is safe to call multiple times (reference counted by wolfSSL).
+## be used from a single thread. ``wolfSSL_Init()`` is called once via
+## ``std/once`` and is safe under concurrent ``newTlsContext`` calls.
 
-import std/nativesockets
+import std/[nativesockets, once]
 import wolfssl/ssl
 export ssl
 
@@ -54,20 +54,14 @@ type
     ssl: ptr Wolfssl
     sockFd: SocketHandle
 
-# -- Global init -----------------------------------------------------------
-# wolfSSL_Init() is reference-counted and safe to call multiple times.
-# A concurrent double-call is harmless — both succeed. We use a simple flag
-# to avoid the overhead on every newTlsContext call after the first.
-# When std/once is available (Nim >= 2.2), this could use Once for stricter
-# single-execution guarantees.
+# -- Global init (thread-safe, called once) --------------------------------
 
-var wolfSslInitialized = false
+var initOnce: Once
 
 proc ensureInit() =
-  if not wolfSslInitialized:
+  initOnce.once:
     if wolfSSL_Init() != SSL_SUCCESS:
       raise newException(WolfSslError, "wolfSSL_Init failed")
-    wolfSslInitialized = true
 
 # -- Lifecycle hooks --------------------------------------------------------
 
