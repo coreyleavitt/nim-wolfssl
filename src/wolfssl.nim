@@ -210,12 +210,16 @@ proc newTlsContext*(version = tlsAuto, caFile = "", caPath = "",
   ## *version* — TLS version selection (default negotiates highest).
   ## *caFile* — path to a PEM CA certificate file.
   ## *caPath* — path to a directory of PEM CA certificates.
-  ## *caData* — PEM/DER CA certificates as bytes (avoids disk I/O on repeat use).
+  ## *caData* — PEM CA certificates as bytes (avoids disk I/O on repeat use).
   ## *certFile* — path to PEM client certificate for mutual TLS.
   ## *keyFile* — path to PEM private key for mutual TLS.
-  ## *certData* — PEM/DER client certificate as bytes for mutual TLS.
-  ## *keyData* — PEM/DER private key as bytes for mutual TLS.
+  ## *certData* — PEM client certificate as bytes for mutual TLS.
+  ## *keyData* — PEM private key as bytes for mutual TLS.
   ## *verify* — require valid server certificate chain (default ``true``).
+  ##
+  ## **Security note:** The caller is responsible for zeroing *keyData* after
+  ## this proc returns. wolfSSL copies the key internally; the original buffer
+  ## should be overwritten to prevent key material from persisting in memory.
   ##
   ## CA source precedence: *caData* > *caFile* > *caPath*. Only one is used.
   ## Client cert precedence: *certData* > *certFile*. Only one is used.
@@ -263,6 +267,13 @@ proc newTlsContext*(version = tlsAuto, caFile = "", caPath = "",
   elif caPath.len > 0:
     checkRet wolfSSL_CTX_load_verify_locations(result.ctx,
       nil, caPath.cstring)
+
+  # Validate mTLS: cert and key must both be present or both absent.
+  let hasCert = certData.len > 0 or certFile.len > 0
+  let hasKey = keyData.len > 0 or keyFile.len > 0
+  if hasCert != hasKey:
+    raise newException(WolfSslError,
+      "mTLS requires both a certificate and a private key")
 
   # Client certificate for mutual TLS.
   if certData.len > 0:
@@ -344,6 +355,9 @@ proc connect*(ctx: var TlsContext, hostname: string, port: int,
 
   # ALPN — Application-Layer Protocol Negotiation (e.g., for HTTP/2).
   if alpn.len > 0:
+    for proto in alpn:
+      if proto.len == 0 or ',' in proto:
+        raiseStateError("ALPN protocol name must be non-empty and cannot contain commas: " & repr(proto))
     # wolfSSL expects a comma-separated protocol list.
     let alpnStr = alpn.join(",")
     checkRet wolfSSL_UseALPN(ctx.ssl, alpnStr.cstring,
