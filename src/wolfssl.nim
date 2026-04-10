@@ -173,7 +173,9 @@ when not defined(wolfsslStatic):
 else:
   {.push raises: [WolfSslError].}
 
-proc state*(ctx: TlsContext): TlsState {.inline, raises: [].} = ctx.state
+proc state*(ctx: TlsContext): TlsState {.inline, raises: [].} =
+  ## Return the current lifecycle state of this context.
+  ctx.state
 
 proc close*(ctx: var TlsContext) =
   ## Send close_notify (if connected) and free all resources.
@@ -309,8 +311,8 @@ proc connect*(ctx: var TlsContext, hostname: string, port: int,
   ## Raises ``WolfSslError`` on DNS failure, TCP failure, or TLS failure.
   ## Can only be called once on a freshly-created context.
   ## After a failed connect the context should be closed.
-  if ctx.state != tsReady:
-    raiseStateError("connect requires a fresh TlsContext (state is " & $ctx.state & ")")
+  if ctx.state != tsReady or ctx.ssl != nil or ctx.sockFd != osInvalidSocket:
+    raiseStateError("connect requires a fresh TlsContext; after a failed connect, call close() first")
   if hostname.len == 0:
     raiseStateError("connect requires a non-empty hostname")
   if port < 0 or port > 65535:
@@ -404,11 +406,15 @@ proc writeBuffer(ctx: var TlsContext, data: pointer, dataLen: int) =
 
 proc write*(ctx: var TlsContext, data: string) =
   ## Send string *data* over the TLS channel. Handles partial writes internally.
+  if ctx.state != tsConnected:
+    raiseStateError("write requires an active connection (state is " & $ctx.state & ")")
   if data.len > 0:
     ctx.writeBuffer(addr data[0], data.len)
 
 proc write*(ctx: var TlsContext, data: openArray[byte]) =
   ## Send binary *data* over the TLS channel. Handles partial writes internally.
+  if ctx.state != tsConnected:
+    raiseStateError("write requires an active connection (state is " & $ctx.state & ")")
   if data.len > 0:
     ctx.writeBuffer(unsafeAddr data[0], data.len)
 
@@ -455,11 +461,17 @@ proc readInto*(ctx: var TlsContext, buf: var openArray[byte]): int =
   ## Returns the number of bytes read. Returns 0 on EOF (clean close or
   ## transport closed). Raises ``WolfSslError`` on TLS errors.
   ##
+  ## **EOF handling:** Both a clean TLS close_notify and a bare connection
+  ## close are treated as EOF (returns 0). Callers who need truncation
+  ## detection should use the low-level bindings directly.
+  ##
   ## This is the low-level streaming read primitive. Use ``read()`` for
   ## convenience when you want to buffer the entire response.
   if ctx.state != tsConnected:
     raiseStateError("readInto requires an active connection (state is " & $ctx.state & ")")
   if buf.len == 0: return 0
+  if buf.len > high(cint).int:
+    raise newException(WolfSslError, "readInto buffer exceeds maximum size of " & $high(cint) & " bytes")
   while true:
     let ret = wolfSSL_read(ctx.ssl,
       addr buf[0], cint(buf.len))

@@ -165,12 +165,30 @@ suite "TlsContext state enforcement":
       ctx.connect("example.com", 99999)
     ctx.close()
 
-  test "write empty string is no-op":
+  test "write empty string on closed context raises":
     var ctx = newTlsContext(verify = false)
-    # Can't write without connect, but empty write should return
-    # before the state check... actually it checks state first.
-    # Just verify it doesn't crash on a connected context.
-    # (Full test requires network — covered in Tier 2.)
+    ctx.close()
+    # Empty write still checks state before the length guard.
+    expect WolfSslError:
+      ctx.write("")
+
+  test "write empty openArray[byte] on closed context raises":
+    var ctx = newTlsContext(verify = false)
+    ctx.close()
+    var empty: seq[byte] = @[]
+    expect WolfSslError:
+      ctx.write(empty)
+
+  test "ALPN protocol with comma raises":
+    var ctx = newTlsContext(verify = false)
+    expect WolfSslError:
+      ctx.connect("example.com", 443, alpn = ["h2,http/1.1"])
+    ctx.close()
+
+  test "ALPN empty protocol name raises":
+    var ctx = newTlsContext(verify = false)
+    expect WolfSslError:
+      ctx.connect("example.com", 443, alpn = [""])
     ctx.close()
 
   test "readInto before connect raises WolfSslError":

@@ -36,7 +36,7 @@ const
   WOLFSSL_TLSV1_2* = 3
   WOLFSSL_ALPN_CONTINUE_ON_MISMATCH* = 2
   WOLFSSL_ALPN_FAILED_ON_MISMATCH* = 4
-  FATAL_ERROR* = -313           ## Received alert fatal error (includes close_notify)
+  FATAL_ERROR* = -313           ## wolfSSL internal return for received fatal TLS alert
   SOCKET_PEER_CLOSED_E* = -397  ## Underlying transport closed
 
 when defined(wolfsslStatic):

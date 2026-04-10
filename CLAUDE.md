@@ -21,16 +21,16 @@ Requires Nim >= 2.0.0, softlink >= 0.3.1, and wolfSSL 5.x development headers. U
 
 ```bash
 # Build via container (dynamic mode, default)
-docker run --rm -v "$PWD://work" -w //work nim-wolfssl-dev nim c --path:src src/wolfssl.nim
+docker run --rm -v "$PWD:/work" -w /work nim-wolfssl-dev nim c --path:src src/wolfssl.nim
 
 # Build with static linking
-docker run --rm -v "$PWD://work" -w //work nim-wolfssl-dev nim c -d:wolfsslStatic --path:src src/wolfssl.nim
+docker run --rm -v "$PWD:/work" -w /work nim-wolfssl-dev nim c -d:wolfsslStatic --path:src src/wolfssl.nim
 
 # Tier 1 tests (no network)
-docker run --rm -v "$PWD://work" -w //work nim-wolfssl-dev nim c -r --path:src tests/t_bindings.nim
+docker run --rm -v "$PWD:/work" -w /work nim-wolfssl-dev nim c -r --path:src tests/t_bindings.nim
 
 # Tier 2 integration tests (network required)
-docker run --rm -v "$PWD://work" -w //work nim-wolfssl-dev nim c -r --path:src tests/t_tls_client.nim
+docker run --rm -v "$PWD:/work" -w /work nim-wolfssl-dev nim c -r --path:src tests/t_tls_client.nim
 
 # Nimble tasks
 nimble test              # tier 1 (binding validation)
