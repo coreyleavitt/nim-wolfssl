@@ -32,6 +32,7 @@ const
   SSL_VERIFY_PEER* = 1
   SSL_VERIFY_FAIL_IF_NO_PEER_CERT* = 2
   WOLFSSL_SNI_HOST_NAME* = 0
+  SOCKET_PEER_CLOSED_E* = -397  ## Underlying transport closed
 
 when defined(wolfsslStatic):
   # Init/cleanup
@@ -59,8 +60,9 @@ when defined(wolfsslStatic):
   proc wolfSSL_write*(ssl: ptr Wolfssl, data: pointer, sz: cint): cint {.importc, header: "<wolfssl/ssl.h>".}
   proc wolfSSL_read*(ssl: ptr Wolfssl, data: pointer, sz: cint): cint {.importc, header: "<wolfssl/ssl.h>".}
 
-  # SNI
+  # SNI and hostname verification
   proc wolfSSL_UseSNI*(ssl: ptr Wolfssl, typ: cint, data: pointer, size: cushort): cint {.importc, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_check_domain_name*(ssl: ptr Wolfssl, dn: cstring): cint {.importc, header: "<wolfssl/ssl.h>".}
 
   # Error
   proc wolfSSL_get_error*(ssl: ptr Wolfssl, ret: cint): cint {.importc, header: "<wolfssl/ssl.h>".}

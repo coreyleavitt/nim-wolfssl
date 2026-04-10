@@ -42,7 +42,7 @@ type
     tls13    ## TLS 1.3 only (wolfTLSv1_3_client_method)
 
   TlsState* = enum
-    tsClosed      ## Zero value — nothing allocated or already freed
+    tsClosed = 0  ## Zero value — must remain first for wasMoved safety
     tsReady       ## Context initialized, ready to connect
     tsConnected   ## TLS session established, can read/write
 
@@ -89,6 +89,15 @@ proc `=destroy`*(ctx: TlsContext) =
     discard  # best-effort cleanup; socket close below always runs
   if ctx.sockFd != osInvalidSocket:
     ctx.sockFd.close()
+  # Zero critical fields so manual =destroy calls leave a safe state
+  # rather than a zombie with dangling pointers. Uses addr to write
+  # through the immutable TlsContext parameter (same pattern as Nim's
+  # internal destructors).
+  var p = addr ctx
+  p.state = tsClosed
+  p.ssl = nil
+  p.ctx = nil
+  p.sockFd = osInvalidSocket
 
 proc `=copy`*(dst: var TlsContext, src: TlsContext) {.error:
   "TlsContext cannot be copied; use 'move' to transfer ownership".}
@@ -110,7 +119,8 @@ when not defined(wolfsslStatic):
     if ret != SSL_SUCCESS and ret <= 0:
       let errCode = wolfSSL_get_error(ssl, ret)
       var buf: array[256, char]
-      discard wolfSSL_ERR_error_string(culong(errCode), cast[cstring](addr buf[0]))
+      discard wolfSSL_ERR_error_string(culong(cast[cuint](errCode)), cast[cstring](addr buf[0]))
+      buf[255] = '\0'  # defensive null-termination
       let err = newException(WolfSslError, $cast[cstring](addr buf[0]))
       err.code = errCode
       raise err
@@ -125,7 +135,8 @@ else:
     if ret != SSL_SUCCESS and ret <= 0:
       let errCode = wolfSSL_get_error(ssl, ret)
       var buf: array[256, char]
-      discard wolfSSL_ERR_error_string(culong(errCode), cast[cstring](addr buf[0]))
+      discard wolfSSL_ERR_error_string(culong(cast[cuint](errCode)), cast[cstring](addr buf[0]))
+      buf[255] = '\0'  # defensive null-termination
       let err = newException(WolfSslError, $cast[cstring](addr buf[0]))
       err.code = errCode
       raise err
@@ -138,9 +149,9 @@ proc raiseStateError(msg: string) {.noinline, noreturn, raises: [WolfSslError].}
 # -- Public API --------------------------------------------------------------
 
 when not defined(wolfsslStatic):
-  {.push raises: [WolfSslError, SoftlinkError, OSError].}
+  {.push raises: [WolfSslError, SoftlinkError].}
 else:
-  {.push raises: [WolfSslError, OSError].}
+  {.push raises: [WolfSslError].}
 
 proc state*(ctx: TlsContext): TlsState {.inline, raises: [].} = ctx.state
 
@@ -222,29 +233,39 @@ proc newTlsContext*(version = tlsAuto, caFile = "", caPath = "",
     wolfSSL_CTX_set_verify(result.ctx, SSL_VERIFY_NONE, nil)
 
 proc connect*(ctx: var TlsContext, hostname: string, port: int) =
-  ## TCP connect + TLS handshake with SNI.
+  ## TCP connect + TLS handshake with SNI and hostname verification.
   ##
   ## Resolves *hostname* via DNS, iterates all returned addresses
   ## (IPv4 and IPv6) until one connects. Then creates a wolfSSL session,
-  ## sets SNI, and performs the TLS handshake.
+  ## sets SNI and hostname verification, and performs the TLS handshake.
   ##
+  ## Raises ``WolfSslError`` on DNS failure, TCP failure, or TLS failure.
   ## Can only be called once on a freshly-created context.
   ## After a failed connect the context should be closed.
   if ctx.state != tsReady:
     raiseStateError("connect requires a fresh TlsContext (state is " & $ctx.state & ")")
+  if hostname.len == 0:
+    raiseStateError("connect requires a non-empty hostname")
+  if port < 0 or port > 65535:
+    raiseStateError("port must be 0..65535, got " & $port)
 
   # DNS resolution + TCP connect with multi-address fallback.
-  var aiList = getAddrInfo(hostname, Port(port), AfUnspec, SockStream, IPPROTO_TCP)
-  defer: freeAddrInfo(aiList)
-  var ai = aiList
-  while ai != nil:
-    let sock = createNativeSocket(cast[Domain](ai.ai_family), SockStream, IPPROTO_TCP)
-    if sock != osInvalidSocket:
-      if nativesockets.connect(sock, ai.ai_addr, ai.ai_addrlen.SockLen) == 0.cint:
-        ctx.sockFd = sock
-        break
-      sock.close()
-    ai = ai.ai_next
+  # OSError from getAddrInfo is wrapped so callers only need to catch WolfSslError.
+  try:
+    var aiList = getAddrInfo(hostname, Port(port), AfUnspec, SockStream, IPPROTO_TCP)
+    defer: freeAddrInfo(aiList)
+    var ai = aiList
+    while ai != nil:
+      let sock = createNativeSocket(cast[Domain](ai.ai_family), SockStream, IPPROTO_TCP)
+      if sock != osInvalidSocket:
+        if nativesockets.connect(sock, ai.ai_addr, ai.ai_addrlen.SockLen) == 0.cint:
+          ctx.sockFd = sock
+          break
+        sock.close()
+      ai = ai.ai_next
+  except OSError as e:
+    raise newException(WolfSslError,
+      "DNS/TCP connect failed for " & hostname & ":" & $port & ": " & e.msg)
   if ctx.sockFd == osInvalidSocket:
     raise newException(WolfSslError, "TCP connect failed for " & hostname & ":" & $port)
 
@@ -257,17 +278,25 @@ proc connect*(ctx: var TlsContext, hostname: string, port: int) =
 
   checkRet wolfSSL_set_fd(ctx.ssl, ctx.sockFd.cint)
 
-  # SNI — required for virtual-hosted servers and certificate matching.
-  let hostnameLen = hostname.len
+  # SNI — required for virtual-hosted servers.
   checkRet wolfSSL_UseSNI(ctx.ssl, WOLFSSL_SNI_HOST_NAME,
-    cast[pointer](addr hostname[0]), cushort(hostnameLen))
+    cast[pointer](addr hostname[0]), cushort(hostname.len))
 
-  # TLS handshake with WANT_READ/WANT_WRITE retry.
+  # Hostname verification — ensures the peer certificate CN/SAN matches.
+  # Without this, any CA-signed cert would pass verification (MITM).
+  checkRet wolfSSL_check_domain_name(ctx.ssl, hostname.cstring)
+
+  # TLS handshake with bounded WANT_READ/WANT_WRITE retry.
+  const maxHandshakeRetries = 100
   var ret = wolfSSL_connect(ctx.ssl)
+  var retries = 0
   while ret != SSL_SUCCESS:
     let err = wolfSSL_get_error(ctx.ssl, ret)
     if err != SSL_ERROR_WANT_READ and err != SSL_ERROR_WANT_WRITE:
       checkRet(ctx.ssl, ret)
+    inc retries
+    if retries >= maxHandshakeRetries:
+      raise newException(WolfSslError, "TLS handshake exceeded " & $maxHandshakeRetries & " retries")
     ret = wolfSSL_connect(ctx.ssl)
   ctx.state = tsConnected
 
@@ -276,17 +305,23 @@ proc write*(ctx: var TlsContext, data: string) =
   if ctx.state != tsConnected:
     raiseStateError("write requires an active connection (state is " & $ctx.state & ")")
   if data.len == 0: return
+  const maxWantRetries = 100
   var offset = 0
+  var wantRetries = 0
   while offset < data.len:
     let ret = wolfSSL_write(ctx.ssl,
       cast[pointer](addr data[offset]), cint(data.len - offset))
     if ret <= 0:
       let err = wolfSSL_get_error(ctx.ssl, ret)
       if err == SSL_ERROR_WANT_WRITE or err == SSL_ERROR_WANT_READ:
+        inc wantRetries
+        if wantRetries >= maxWantRetries:
+          raise newException(WolfSslError, "write exceeded " & $maxWantRetries & " WANT retries")
         continue
       checkRet(ctx.ssl, ret)
     else:
       offset += ret
+      wantRetries = 0  # reset on progress
 
 proc read*(ctx: var TlsContext, bufSize = 4096, maxSize = 8_388_608): string =
   ## Read from the TLS channel until the peer closes the connection.
@@ -308,18 +343,19 @@ proc read*(ctx: var TlsContext, bufSize = 4096, maxSize = 8_388_608): string =
   var pos = 0
   while true:
     if pos == result.len:
-      let newLen = result.len * 2
-      if newLen > maxSize:
+      # Guard against integer overflow before doubling.
+      if result.len > maxSize div 2:
         raise newException(WolfSslError, "read exceeded maxSize of " & $maxSize & " bytes")
-      result.setLen(newLen)
+      result.setLen(result.len * 2)
     let ret = wolfSSL_read(ctx.ssl,
       cast[pointer](addr result[pos]), cint(result.len - pos))
     if ret <= 0:
       let err = wolfSSL_get_error(ctx.ssl, ret)
       if err == SSL_ERROR_WANT_READ or err == SSL_ERROR_WANT_WRITE:
         continue
-      if err == SSL_ERROR_ZERO_RETURN or ret == 0:
-        break  # EOF — clean close or truncation (see docstring)
+      if err == SSL_ERROR_ZERO_RETURN or err == SSL_ERROR_NONE or
+         err == SOCKET_PEER_CLOSED_E:
+        break  # EOF — clean close, ambiguous disconnect, or transport closed
       checkRet(ctx.ssl, ret)
     else:
       pos += ret

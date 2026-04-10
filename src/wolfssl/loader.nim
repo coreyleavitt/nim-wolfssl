@@ -51,8 +51,9 @@ dynlib wolfsslPattern:
   proc wolfSSL_write(ssl: ptr Wolfssl, data: pointer, sz: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
   proc wolfSSL_read(ssl: ptr Wolfssl, data: pointer, sz: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}
 
-  # SNI
+  # SNI and hostname verification
   proc wolfSSL_UseSNI(ssl: ptr Wolfssl, typ: cint, data: pointer, size: cushort): cint {.cdecl, header: "<wolfssl/ssl.h>".}
+  proc wolfSSL_check_domain_name(ssl: ptr Wolfssl, dn: cstring): cint {.cdecl, header: "<wolfssl/ssl.h>".}
 
   # Error
   proc wolfSSL_get_error(ssl: ptr Wolfssl, ret: cint): cint {.cdecl, header: "<wolfssl/ssl.h>".}

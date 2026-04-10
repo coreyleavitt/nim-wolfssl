@@ -47,11 +47,10 @@ suite "tls client integration":
     check ctx.state == tsClosed
     ctx.close()  # idempotent
 
-  test "connect to bad host raises":
+  test "connect to bad host raises WolfSslError":
     var ctx = newTlsContext(caFile = ca)
-    # DNS failure raises OSError (from getAddrInfo); TCP/TLS failure raises
-    # WolfSslError. Either is correct for an unreachable host.
-    expect CatchableError:
+    # DNS failure is wrapped in WolfSslError so callers only need one type.
+    expect WolfSslError:
       ctx.connect("host.invalid.test", 443)
     ctx.close()
 
