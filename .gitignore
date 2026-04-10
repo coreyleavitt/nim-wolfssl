@@ -1,0 +1,7 @@
+# Nim build artifacts
+nimcache/
+*.out
+
+# Compiled test binaries
+tests/t_bindings
+tests/t_tls_client
