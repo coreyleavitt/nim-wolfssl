@@ -18,13 +18,6 @@ type
   Wolfssl* {.importc: "WOLFSSL", header: "<wolfssl/ssl.h>", incompleteStruct.} = object
   WolfsslMethod* {.importc: "WOLFSSL_METHOD", header: "<wolfssl/ssl.h>", incompleteStruct.} = object
 
-# Pointer type aliases — named types work around a Nim compiler ICE
-# (nkPtrTy in emit context) when ptr-to-incompleteStruct is used as a
-# return type inside softlink dynlib blocks.
-type
-  WolfsslCtxPtr* = ptr WolfsslCtx
-  WolfsslPtr* = ptr Wolfssl
-  WolfsslMethodPtr* = ptr WolfsslMethod
 
 const
   SSL_SUCCESS* = 1
