@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: opensuse/tumbleweed
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: zypper --non-interactive install nim wolfssl-devel gcc ca-certificates-mozilla
+
+      - name: Install Nimble dependencies
+        run: nimble install -y --depsOnly
+
+      - name: Build (dynamic)
+        run: nim c --path:src src/wolfssl.nim
+
+      - name: Build (static)
+        run: nim c -d:wolfsslStatic --path:src src/wolfssl.nim
+
+      - name: Tier 1 — binding validation
+        run: nim c -r --path:src tests/t_bindings.nim
+
+      - name: Tier 2 — TLS integration
+        run: nim c -r --path:src tests/t_tls_client.nim
