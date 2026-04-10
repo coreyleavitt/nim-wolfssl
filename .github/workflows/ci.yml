@@ -9,13 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container:
-      image: opensuse/tumbleweed
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: zypper --non-interactive install gcc ca-certificates-mozilla git autoconf automake libtool make curl tar xz
 
       - name: Install Nim via choosenim
         run: |
@@ -26,13 +21,15 @@ jobs:
 
       - name: Build wolfSSL from source
         run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q autoconf automake libtool
           git clone --depth 1 --branch v5.7.6-stable https://github.com/wolfSSL/wolfssl.git /tmp/wolfssl
           cd /tmp/wolfssl
           ./autogen.sh
-          CFLAGS="-Wno-error=return-mismatch" ./configure --enable-sni --prefix=/usr
-          make -j$(nproc) CFLAGS="-Wno-error=return-mismatch"
-          make install
-          ldconfig
+          ./configure --enable-sni --prefix=/usr
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
 
       - name: Install Nimble dependencies
         run: nimble install -y --depsOnly
