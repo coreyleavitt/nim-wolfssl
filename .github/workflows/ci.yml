@@ -22,8 +22,8 @@ jobs:
           git clone --depth 1 --branch v5.7.6-stable https://github.com/wolfSSL/wolfssl.git /tmp/wolfssl
           cd /tmp/wolfssl
           ./autogen.sh
-          ./configure --enable-sni --prefix=/usr
-          make -j$(nproc)
+          CFLAGS="-Wno-error=return-mismatch" ./configure --enable-sni --prefix=/usr
+          make -j$(nproc) CFLAGS="-Wno-error=return-mismatch"
           make install
           ldconfig
 
